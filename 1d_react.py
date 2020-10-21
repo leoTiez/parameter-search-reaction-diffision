@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 
 import seqDataHandler as dh
 
+VERBOSITY = 1
 
 
 def reaction(pol, cpd, interact_pol=0., interact_cpd=1., nonlin_break=0.1):
@@ -44,23 +45,22 @@ def nabla_sq_1d(substance, h=1, axis=1):
 
 
 class ODE:
-    def __init__(self, coeff, restrictions):
-        self._coeff = np.zeros(coeff.size)
+    def __init__(self, coeff, restrictions, num_sys=10000):
+        self._coeff = np.array([coeff, ] * num_sys)
         self.restrictions = restrictions
-        self._coeff[self.restrictions != None] = self.restrictions[self.restrictions != None]
-        self.set_coff(coeff)
+        self.num_sys = num_sys
 
-    def calc(self, diffs_pol, diffs_cpd):
+    def calc(self, diffs_pol, diffs_cpd, dt=1.):
         conc = self.conc_params(diffs_pol, diffs_cpd)
-        return conc.T.dot(self._coeff).T
+        return dt * np.einsum('ki,ijk->jk', self._coeff, conc)
 
     def conc_params(self, diffs_pol, diffs_cpd):
         spatial_diff = nabla_sq_1d(diffs_pol)
         conc = np.asarray([diffs_pol, diffs_cpd, spatial_diff])
-        return conc
+        return conc[~self.restrictions, :, :]
 
     def set_coff(self, new_coffs):
-        self._coeff[self.restrictions == None] = new_coffs[self.restrictions == None]
+        self._coeff = new_coffs
 
 
 def B(x, k, i, t):
@@ -106,14 +106,17 @@ def bdspl(x, t, k):
     return np.asarray([Bdt(x, k, i, t) for i in range(n)])
 
 
-def fit(y_pol, y_cpd, ode_pol, ode_cpd, x=np.asarray([0, 3, 6, 9]), degree=3, delta=1e-8):
-    # Bspline and recursive function differ ===> Problem with low number of data points
-
-    # dspline = BSpline(t=t, c=np.ones(t.size), k=degree)
-    # bdt_f = dspline.derivative()
-    # bdt = bdt_f(t)
-    # bdt = bdt.reshape((bdt.size, 1))
-
+def fit(
+        y_pol,
+        y_cpd,
+        ode_pol,
+        ode_cpd,
+        x=np.asarray([0, 3, 6, 9]),
+        degree=3,
+        delta=1e-8,
+        success_ratio=0.97,
+        verbosity=0
+):
     # create example t, as they should be the same for all data values along the genome
     t, _, _ = interpolate.splrep(x, y_pol[:, 0], s=0, k=degree)
     bd = bdspl(x, t, k=degree)
@@ -129,15 +132,42 @@ def fit(y_pol, y_cpd, ode_pol, ode_cpd, x=np.asarray([0, 3, 6, 9]), degree=3, de
         result_ode_cpd = bd.dot(ode_cpd.calc(u_pol, u_cpd))
         b_coff_pol, _, _, _ = np.linalg.lstsq(b_lhs, 2 * (spl.dot(y_pol) + result_ode_pol))
         b_coff_cpd, _, _, _ = np.linalg.lstsq(b_lhs, 2 * (spl.dot(y_cpd) + result_ode_cpd))
+
         pol_ode_conc = ode_pol.conc_params(u_pol, u_cpd)
         cpd_ode_conc = ode_cpd.conc_params(u_pol, u_cpd)
+        conc_mat_pol = np.matmul(pol_ode_conc.transpose(2, 0, 1), pol_ode_conc.transpose(2, 1, 0))
+        conc_mat_cpd = np.matmul(cpd_ode_conc.transpose(2, 0, 1), cpd_ode_conc.transpose(2, 1, 0))
         r_term_pol = np.einsum('ij,ijk->ik', bspline_pol.c.T.dot(bd.T), pol_ode_conc.T)
         r_term_cpd = np.einsum('ij,ijk->ik', bspline_cpd.c.T.dot(bd.T), cpd_ode_conc.T)
-        # does not finish. What's the problem?
-        a_coff_pol, _, _, _ = np.linalg.lstsq(u_pol.T.dot(u_pol), 2 * r_term_pol)
-        a_coff_cpd, _, _, _ = np.linalg.lstsq(u_cpd.T.dot(u_cpd), 2 * r_term_cpd)
-        if np.linalg.norm(b_coff_pol - bspline_pol.c) < delta and np.linalg.norm(b_coff_cpd - bspline_cpd.c) < delta:
+
+        a_coff_pol = []
+        a_coff_cpd = []
+        for c_pol, c_cpd, r_pol, r_cpd in zip(conc_mat_pol, conc_mat_cpd, r_term_pol, r_term_cpd):
+            ac_pol, _, _, _ = np.linalg.lstsq(c_pol, 2 * r_pol)
+            ac_cpd, _, _, _ = np.linalg.lstsq(c_cpd, 2 * r_cpd)
+            a_coff_pol.append(ac_pol)
+            a_coff_cpd.append(ac_cpd)
+
+        a_coff_pol = np.asarray(a_coff_pol)
+        a_coff_cpd = np.asarray(a_coff_cpd)
+
+        success_pol = (
+                              np.linalg.norm(b_coff_pol - bspline_pol.c, axis=0) < delta
+                      ).astype('int').sum() / float(y_pol.shape[1])
+
+        success_cpd = (
+                              np.linalg.norm(b_coff_cpd - bspline_cpd.c, axis=0) < delta
+                      ).astype('int').sum() / float(y_cpd.shape[1])
+        if success_pol > success_ratio and success_cpd > success_ratio:
             break
+
+        if verbosity > 0:
+            print('MAX Diff b spline factors pol %s' % np.linalg.norm(b_coff_pol - bspline_pol.c, axis=0).max())
+            print('MIN Diff b spline factors pol %s' % np.linalg.norm(b_coff_pol - bspline_pol.c, axis=0).min())
+            print('RATIO b spline factors pol under thresh %s' % success_pol)
+            print('MAX Diff b spline factors cpd %s' % np.linalg.norm(b_coff_cpd - bspline_cpd.c, axis=0).max())
+            print('MIN Diff b spline factors cpd %s' % np.linalg.norm(b_coff_cpd - bspline_cpd.c, axis=0).min())
+            print('RATIO b spline factors cpd under thresh %s\n' % success_cpd)
 
         ode_pol.set_coff(a_coff_pol)
         ode_cpd.set_coff(a_coff_cpd)
@@ -147,6 +177,24 @@ def fit(y_pol, y_cpd, ode_pol, ode_cpd, x=np.asarray([0, 3, 6, 9]), degree=3, de
         u_cpd = bspline_cpd(x)
 
     return ode_pol, ode_cpd
+
+
+def gravity_centre(hist, bins, ratio=0.8):
+    s = 0
+    s_total = hist.sum()
+    h, b = [], []
+    while True:
+        s += hist.max()
+        h.append(hist.max())
+        b.append(bins[hist == hist.max()][0])
+        bins = bins[hist < hist.max()]
+        hist = hist[hist < hist.max()]
+        if s > ratio * s_total:
+            break
+    b = np.asarray(b).reshape(-1)
+    h = np.asarray(h).reshape(-1)
+
+    return b, h
 
 
 def main():
@@ -170,49 +218,119 @@ def main():
         )
 
     all_values, _ = dh.get_values(bw_files)
-    pol_t0 = np.asarray(all_values[0])[int(1e6):int(1.01e6)] - np.asarray(all_values[4])[int(1e6):int(1.01e6)]
-    pol_t30 = np.asarray(all_values[2])[int(1e6):int(1.01e6)] - np.asarray(all_values[4])[int(1e6):int(1.01e6)]
+    equilibrium = np.asarray(all_values[4])[int(1e6):int(1.01e6)]
+    pol_t0 = np.asarray(all_values[0])[int(1e6):int(1.01e6)] - equilibrium
+    pol_t30 = np.asarray(all_values[2])[int(1e6):int(1.01e6)] - equilibrium
     cpd_t0 = np.asarray(all_values[1])[int(1e6):int(1.01e6)]
     cpd_t30 = np.asarray(all_values[3])[int(1e6):int(1.01e6)]
 
     del all_values
 
-    ode_pol = ODE(np.asarray([-1, 2, 0.01]), np.full(3, None))
-    ode_cpd = ODE(np.asarray([-1, 0, 0]), np.asarray([None, 0, 0]))
+    if VERBOSITY > 1:
+        fig, ax = plt.subplots(2, 1, figsize=(12, 7))
 
+        ax[0].hist(pol_t0, bins='auto', alpha=0.4, label='t=0')
+        ax[0].hist(pol_t30, bins='auto', alpha=0.4, label='t=30')
+        ax[0].set_title('Histogram for Pol II')
+        ax[0].legend()
+
+        ax[1].hist(pol_t0[np.abs(pol_t0) > 1.], bins='auto', alpha=0.4, label='t=0 non-zero')
+        ax[1].hist(pol_t30[np.abs(pol_t30) > 1.], bins='auto', alpha=0.4, label='t=30 non-zero')
+        ax[1].set_title('Histogram for Pol II with deviation > 1')
+        ax[1].legend()
+
+        fig_c, ax_c = plt.subplots(2, 1, figsize=(12, 7))
+
+        ax_c[0].hist(cpd_t0, bins='auto', alpha=0.4, label='t=0')
+        ax_c[0].hist(cpd_t30, bins='auto', alpha=0.4, label='t=30')
+        ax_c[0].set_title('Histogram for CPD')
+        ax_c[0].legend()
+
+        ax_c[1].hist(cpd_t0[np.abs(cpd_t0) > 1.], bins='auto', alpha=0.4, label='t=0 non-zero')
+        ax_c[1].hist(cpd_t30[np.abs(cpd_t30) > 1.], bins='auto', alpha=0.4, label='t=30 non-zero')
+        ax_c[1].set_title('Histogram for CPD with deviation > 1')
+        ax_c[1].legend()
+
+        plt.show()
+
+    ode_pol = ODE(np.asarray([-1, 2, 0.01]), np.asarray([False, False, True]), num_sys=pol_t0.size)
+    ode_cpd = ODE(np.asarray([-1, 0, 0]), np.asarray([False, True, True]), num_sys=cpd_t0.size)
+
+    # TODO Problem when changing restrictions
     ode_pol, ode_cpd = fit(
-        np.asarray([pol_t0, pol_t30, np.zeros(pol_t30.size), np.zeros(pol_t30.size)]),
+        np.asarray([equilibrium + pol_t0, equilibrium + pol_t30, equilibrium + np.zeros(pol_t30.size), equilibrium + np.zeros(pol_t30.size)]),
         np.asarray([cpd_t0, cpd_t30, np.zeros(cpd_t30.size), np.zeros(pol_t30.size)]),
         ode_pol,
         ode_cpd,
-        degree=3
+        degree=3,
+        verbosity=VERBOSITY
     )
 
-    # x = np.arange(0, pol.size)
-    #
-    # plt.ion()
-    # fig = plt.figure(figsize=(15, 10))
-    # ax = fig.add_subplot(111)
-    # line_pol, = ax.plot(x, pol, label='Pol2')
-    # line_cpd, = ax.plot(x, cpd, label='CPD')
-    # ax.plot(x, all_values[2][int(1e6):int(1.01e6)], label='Pol2 30')
-    # ax.plot(x, all_values[3][int(1e6):int(1.01e6)], label='CPD 30')
-    # ax.plot(x, all_values[0][int(1e6):int(1.01e6)], label='Pol2 0')
-    # ax.plot(x, all_values[1][int(1e6):int(1.01e6)], label='CPD 0')
-    # plt.legend(loc='upper right')
-    # fig.canvas.draw()
-    # fig.canvas.flush_events()
-    #
-    # for time in range(10000):
-    #     pol_new = reaction_pol(pol, cpd, dt=dt)
-    #     cpd_new = reaction_cpd(cpd, pol, dt=dt)
-    #     cpd = cpd_new
-    #     pol = pol_new
-    #
-    #     line_pol.set_ydata(pol)
-    #     line_cpd.set_ydata(cpd)
-    #     fig.canvas.draw()
-    #     fig.canvas.flush_events()
+    if VERBOSITY > 0:
+        print('Pol coefficients have a mean of %s with a variance of %s and a std of %s' %
+              (ode_pol._coeff.mean(axis=0), ode_pol._coeff.var(axis=0), ode_pol._coeff.std(axis=0)))
+
+        print('CPD coefficients have a mean of %s with a variance of %s and a std of %s' %
+              (ode_cpd._coeff.mean(axis=0), ode_cpd._coeff.var(axis=0), ode_cpd._coeff.std(axis=0)))
+
+    pol_param = np.zeros(3)
+    for c in range(ode_pol._coeff.shape[1]):
+        hist, bins = np.histogram(ode_pol._coeff[:, c], bins='auto')
+        bins = bins[:-1]
+        b, h = gravity_centre(hist, bins)
+        pol_param[c] = b.mean()
+
+        if VERBOSITY > 1:
+            plt.bar(b, h, width=0.5, alpha=0.4, label='Coeff %s' % c)
+
+    if VERBOSITY > 1:
+        plt.legend()
+        plt.show()
+
+    cpd_param = np.zeros(3)
+    for c in range(ode_cpd._coeff.shape[1]):
+        hist, bins = np.histogram(ode_cpd._coeff[:, c], bins='auto')
+        bins = bins[:-1]
+        b, h = gravity_centre(hist, bins)
+        cpd_param[c] = b.mean()
+        if VERBOSITY > 1:
+            plt.bar(b, h, width=0.5, alpha=0.4, label='Coeff %s' % c)
+
+    if VERBOSITY > 1:
+        plt.legend()
+        plt.show()
+
+    # TODO Why is the spatial influence a problem?
+    pol_param[2] = 0
+    ode_pol = ODE(pol_param, np.full(3, False), num_sys=pol_t0.size)
+    ode_cpd = ODE(cpd_param, np.asarray([False, True, True]), num_sys=cpd_t0.size)
+    pos = np.arange(0, pol_t0.size)
+
+    plt.ion()
+    fig = plt.figure(figsize=(15, 10))
+    ax = fig.add_subplot(111)
+    line_pol, = ax.plot(pos, equilibrium + pol_t0, label='Pol2')
+    line_cpd, = ax.plot(pos, cpd_t0, label='CPD')
+    ax.plot(pos, equilibrium + pol_t30, label='Pol2 30')
+    ax.plot(pos, cpd_t30, label='CPD 30')
+    ax.plot(pos, equilibrium + pol_t0, label='Pol2 0')
+    ax.plot(pos, cpd_t30, label='CPD 0')
+    plt.legend(loc='upper right')
+    fig.canvas.draw()
+    fig.canvas.flush_events()
+
+    pol = (equilibrium + pol_t0).reshape(1, pol_t0.size)
+    cpd = cpd_t0.reshape(1, cpd_t0.size)
+    for time in range(10000):
+        pol_new = ode_pol.calc(pol, cpd, dt=0.01)
+        cpd_new = ode_cpd.calc(pol, cpd, dt=0.01)
+        cpd += cpd_new
+        pol += pol_new
+
+        line_pol.set_ydata(pol.reshape(-1))
+        line_cpd.set_ydata(cpd.reshape(-1))
+        fig.canvas.draw()
+        fig.canvas.flush_events()
 
 
 if __name__ == '__main__':
