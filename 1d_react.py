@@ -336,9 +336,13 @@ def main():
 
 
 def test_main():
-    A = np.genfromtxt('A-rand-nodiff.csv', delimiter=',')
-    B = np.genfromtxt('B-rand-nodiff.csv', delimiter=',')
-    x = np.genfromtxt('Time.csv', delimiter=',')
+    # Original parameters A
+    # 1, -1, 0.1, 1
+    A = np.genfromtxt('data/A-rand-nodiff.csv', delimiter=',')
+    B = np.genfromtxt('data/B-rand-nodiff.csv', delimiter=',')
+    # Original parameters B
+    # 1, -1, 0.1, 3
+    x = np.genfromtxt('data/Time.csv', delimiter=',')
 
     ode_A = ODE(np.asarray([1, -1, 0.1, 1]), np.asarray([False, False, False, False]), num_sys=A.shape[1])
     ode_B = ODE(np.asarray([1, -1, 0.1, 3]), np.asarray([False, False, False, False]), num_sys=B.shape[1])
