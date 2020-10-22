@@ -1,0 +1,22 @@
+Bootstrap: library
+From: ubuntu:18.04
+Stage: build
+
+%setup
+
+%files
+
+%post
+    apt update && apt install git python3.6 python3-pip
+    git clone git@github.com:leoTiez/rd-tc-ner.git && cd rd-tc-ner
+    python3 -m pip install -r requirements.txt
+
+%runscript
+    python3 1d_react.py
+
+%labels
+    Author Leo Zeitler
+    Version v0.0.1
+
+%help
+    Container for the simulation of the TC NER interaction pathway
