@@ -1,174 +1,12 @@
 #!/usr/bin/python3
 import numpy as np
-from scipy import interpolate
-
 import matplotlib.pyplot as plt
 
 import seqDataHandler as dh
+from ODE import ODE
+from fitting import fit
 
 VERBOSITY = 3
-
-
-def nabla_sq_1d(substance, h=1, axis=1):
-    """
-    Second derivative of the vector function of the species for one dimension
-    :param substance: species
-    :return: second derivative of the species vector function for one dimension
-    """
-    substance_xnh = np.roll(substance, -h, axis=axis)
-    substance_xph = np.roll(substance, h, axis=axis)
-    return substance_xph + substance_xnh - 2 * substance
-
-
-class ODE:
-    def __init__(self, coeff, restrictions, own_idx=0, num_sys=10000):
-        self.restrictions = restrictions
-        self._coeff = np.array([coeff[~self.restrictions], ] * num_sys)
-        self.own_idx = own_idx
-        self.num_sys = num_sys
-
-    def calc(self, diffs_pol, diffs_cpd, dt=0.1):
-        conc = self.conc_params(diffs_pol, diffs_cpd)
-        return dt * np.einsum('ki,ijk->jk', self._coeff, conc)
-
-    def conc_params(self, diffs_pol, diffs_cpd):
-        spatial_diff = nabla_sq_1d(diffs_pol)
-        conc = np.asarray([diffs_pol, diffs_cpd, np.power([diffs_pol, diffs_cpd][self.own_idx], 3), spatial_diff])
-        return conc[~self.restrictions, :, :]
-
-    def set_coff(self, new_coffs):
-        self._coeff = new_coffs
-
-
-def B(x, k, i, t):
-    if k == 0:
-        phi_0 = np.zeros(x.shape)
-        phi_0[np.logical_and(t[i] <= x, x < t[i + 1])] = 1.
-        return phi_0
-    if t[i+k] == t[i]:
-        c1 = np.zeros(x.shape)
-    else:
-        c1 = (x - t[i])/(t[i+k] - t[i]) * B(x, k-1, i, t)
-    if t[i+k+1] == t[i+1]:
-        c2 = np.zeros(x.shape)
-    else:
-        c2 = (t[i+k+1] - x)/(t[i+k+1] - t[i+1]) * B(x, k-1, i+1, t)
-    return c1 + c2
-
-
-def bspl(x, t, k):
-    n = len(t) - k - 1
-    assert (n >= k+1)
-    return np.asarray([B(x, k, i, t) for i in range(n)])
-
-
-def Bdt(x, k, i, t):
-    if k == 1:
-        phid_0 = np.zeros(x.shape)
-        phid_0[np.logical_and(t[i] <= x, x < t[i + 1])] = 1.
-        return phid_0
-    if t[i+k] == t[i]:
-        c1 = np.zeros(x.shape)
-    else:
-        c1 = 1./(t[i+k] - t[i]) * Bdt(x, k-1, i, t)
-    if t[i+k+1] == t[i+1]:
-        c2 = np.zeros(x.shape)
-    else:
-        c2 = 1./(t[i+k+1] - t[i+1]) * Bdt(x, k-1, i+1, t)
-    return k * (c1 - c2)
-
-
-def bdspl(x, t, k):
-    n = len(t) - k - 1
-    return np.asarray([x[i] * Bdt(x, k, i, t) for i in range(n)])
-
-
-def fit(
-        y_pol,
-        y_cpd,
-        ode_pol,
-        ode_cpd,
-        x=np.asarray([0, 3, 6, 9]),
-        degree=3,
-        delta=1e-8,
-        w_model=1.0,
-        success_ratio=0.97,
-        verbosity=0
-):
-    # create example t, as they should be the same for all data values along the genome
-    t, _, _ = interpolate.splrep(x, y_pol[:, 0], s=0, k=degree)
-    bd = bdspl(x, t, k=degree)
-    spl = bspl(x, t, k=degree)
-    bspline_pol = interpolate.make_lsq_spline(x=x, y=y_pol, t=t, k=degree)
-    bspline_cpd = interpolate.make_lsq_spline(x=x, y=y_cpd, t=t, k=degree)
-
-    b_lhs = w_model * bd.dot(bd.T) + spl.dot(spl.T)
-    u_pol = bspline_pol(x)
-    u_cpd = bspline_cpd(x)
-
-    counter = 0
-    while True:
-        if verbosity > 2:
-            plt.plot(x, bspline_pol(x)[:, 0], label='B Spline A')
-            plt.plot(x, y_pol[:, 0], label='Real function A')
-            plt.plot(x, bspline_cpd(x)[:, 0], label='B Spline B')
-            plt.plot(x, y_cpd[:, 0], label='Real function B')
-            plt.legend()
-            plt.show()
-
-        result_ode_pol = bd.dot(ode_pol.calc(u_pol, u_cpd))
-        result_ode_cpd = bd.dot(ode_cpd.calc(u_pol, u_cpd))
-        b_coff_pol, _, _, _ = np.linalg.lstsq(b_lhs, (spl.dot(y_pol) + w_model * result_ode_pol))
-        b_coff_cpd, _, _, _ = np.linalg.lstsq(b_lhs, (spl.dot(y_cpd) + w_model * result_ode_cpd))
-
-        pol_ode_conc = ode_pol.conc_params(u_pol, u_cpd)
-        cpd_ode_conc = ode_cpd.conc_params(u_pol, u_cpd)
-        conc_mat_pol = np.matmul(pol_ode_conc.transpose(2, 0, 1), pol_ode_conc.transpose(2, 1, 0))
-        conc_mat_cpd = np.matmul(cpd_ode_conc.transpose(2, 0, 1), cpd_ode_conc.transpose(2, 1, 0))
-        r_term_pol = np.einsum('ij,ijk->ik', bspline_pol.c.T.dot(bd), pol_ode_conc.T)
-        r_term_cpd = np.einsum('ij,ijk->ik', bspline_cpd.c.T.dot(bd), cpd_ode_conc.T)
-
-        a_coff_pol = []
-        a_coff_cpd = []
-        for c_pol, c_cpd, r_pol, r_cpd in zip(conc_mat_pol, conc_mat_cpd, r_term_pol, r_term_cpd):
-            ac_pol, _, _, _ = np.linalg.lstsq(c_pol, r_pol)
-            ac_cpd, _, _, _ = np.linalg.lstsq(c_cpd, r_cpd)
-            a_coff_pol.append(ac_pol)
-            a_coff_cpd.append(ac_cpd)
-
-        a_coff_pol = np.asarray(a_coff_pol)
-        a_coff_cpd = np.asarray(a_coff_cpd)
-
-        success_pol = (
-                              np.linalg.norm(b_coff_pol - bspline_pol.c, axis=0) < delta
-                      ).astype('int').sum() / float(y_pol.shape[1])
-
-        success_cpd = (
-                              np.linalg.norm(b_coff_cpd - bspline_cpd.c, axis=0) < delta
-                      ).astype('int').sum() / float(y_cpd.shape[1])
-        if success_pol > success_ratio and success_cpd > success_ratio:
-            break
-        if counter > 1200:
-            break
-
-        if verbosity > 0:
-            print('Counter %s' % counter)
-            print('MAX Diff b spline factors pol %s' % np.linalg.norm(b_coff_pol - bspline_pol.c, axis=0).max())
-            print('MIN Diff b spline factors pol %s' % np.linalg.norm(b_coff_pol - bspline_pol.c, axis=0).min())
-            print('RATIO b spline factors pol under thresh %s' % success_pol)
-            print('MAX Diff b spline factors cpd %s' % np.linalg.norm(b_coff_cpd - bspline_cpd.c, axis=0).max())
-            print('MIN Diff b spline factors cpd %s' % np.linalg.norm(b_coff_cpd - bspline_cpd.c, axis=0).min())
-            print('RATIO b spline factors cpd under thresh %s\n' % success_cpd)
-
-        counter += 1
-        ode_pol.set_coff(a_coff_pol)
-        ode_cpd.set_coff(a_coff_cpd)
-        bspline_pol.c = b_coff_pol
-        bspline_cpd.c = b_coff_cpd
-        u_pol = bspline_pol(x)
-        u_cpd = bspline_cpd(x)
-
-    return ode_pol, ode_cpd
 
 
 def gravity_centre(hist, bins, ratio=0.8):
@@ -266,14 +104,14 @@ def main():
 
     if VERBOSITY > 0:
         print('Pol coefficients have a mean of %s with a variance of %s and a std of %s' %
-              (ode_pol._coeff.mean(axis=0), ode_pol._coeff.var(axis=0), ode_pol._coeff.std(axis=0)))
+              (ode_pol.coeff.mean(axis=0), ode_pol.coeff.var(axis=0), ode_pol.coeff.std(axis=0)))
 
         print('CPD coefficients have a mean of %s with a variance of %s and a std of %s' %
-              (ode_cpd._coeff.mean(axis=0), ode_cpd._coeff.var(axis=0), ode_cpd._coeff.std(axis=0)))
+              (ode_cpd.coeff.mean(axis=0), ode_cpd.coeff.var(axis=0), ode_cpd.coeff.std(axis=0)))
 
     pol_param = np.zeros(4)
-    for c in range(ode_pol._coeff.shape[1]):
-        hist, bins = np.histogram(ode_pol._coeff[:, c], bins='auto')
+    for c in range(ode_pol.coeff.shape[1]):
+        hist, bins = np.histogram(ode_pol.coeff[:, c], bins='auto')
         bins = bins[:-1]
         b, h = gravity_centre(hist, bins)
         pol_param[c] = b.mean()
@@ -286,8 +124,8 @@ def main():
         plt.show()
 
     cpd_param = np.zeros(4)
-    for c in range(ode_cpd._coeff.shape[1]):
-        hist, bins = np.histogram(ode_cpd._coeff[:, c], bins='auto')
+    for c in range(ode_cpd.coeff.shape[1]):
+        hist, bins = np.histogram(ode_cpd.coeff[:, c], bins='auto')
         bins = bins[:-1]
         b, h = gravity_centre(hist, bins)
         cpd_param[c] = b.mean()
@@ -337,15 +175,15 @@ def main():
 
 def test_main():
     # Original parameters A
-    # 1, -1, 0.1, 1
-    A = np.genfromtxt('data/A-rand-nodiff.csv', delimiter=',')
-    B = np.genfromtxt('data/B-rand-nodiff.csv', delimiter=',')
+    # 1, -1, -0.1, 1
+    A = np.genfromtxt('data/A-rand.csv', delimiter=',')
     # Original parameters B
-    # 1, -1, 0.1, 3
+    # 1, -1, -0.1, 3
+    B = np.genfromtxt('data/B-rand.csv', delimiter=',')
     x = np.genfromtxt('data/Time.csv', delimiter=',')
 
-    ode_A = ODE(np.asarray([1, -1, 0.1, 1]), np.asarray([False, False, False, False]), num_sys=A.shape[1])
-    ode_B = ODE(np.asarray([1, -1, 0.1, 3]), np.asarray([False, False, False, False]), num_sys=B.shape[1])
+    ode_A = ODE(np.random.random(4), np.asarray([False, False, False, False]), own_idx=0, num_sys=A.shape[1])
+    ode_B = ODE(np.random.random(4), np.asarray([False, False, False, False]), own_idx=1, num_sys=B.shape[1])
 
     ode_A, ode_B = fit(
         A[:-1],
@@ -353,42 +191,48 @@ def test_main():
         ode_A,
         ode_B,
         x=x,
-        degree=3,
+        w_model=1.,
+        degree=5, # Finding ===> Is very sensitive to the degree. Using degree of 4 or 5 works perfect
+        delta=1e-10,
         verbosity=VERBOSITY,
         success_ratio=.99
     )
 
     if VERBOSITY > 0:
         print('A coefficients have a median of %s, mean of %s with a variance of %s and a std of %s' %
-              (np.median(ode_A._coeff, axis=0), ode_A._coeff.mean(axis=0), ode_A._coeff.var(axis=0),
-               ode_A._coeff.std(axis=0)))
+              (np.median(ode_A.coeff, axis=0), ode_A.coeff.mean(axis=0), ode_A.coeff.var(axis=0),
+               ode_A.coeff.std(axis=0)))
 
         print('B coefficients have a median of %s, a mean of %s with a variance of %s and a std of %s' %
-              (np.median(ode_B._coeff, axis=0), ode_B._coeff.mean(axis=0), ode_B._coeff.var(axis=0),
-               ode_B._coeff.std(axis=0)))
+              (np.median(ode_B.coeff, axis=0), ode_B.coeff.mean(axis=0), ode_B.coeff.var(axis=0),
+               ode_B.coeff.std(axis=0)))
 
     # a_param = np.zeros(4)
     # b_param = np.zeros(4)
-    # a_param[:2] = np.median(ode_A._coeff, axis=0)
-    # b_param[:2] = np.median(ode_B._coeff, axis=0)
+    # a_param[:2] = np.median(ode_A.coeff, axis=0)
+    # b_param[:2] = np.median(ode_B.coeff, axis=0)
 
-    a_param = np.median(ode_A._coeff, axis=0)
-    b_param = np.median(ode_B._coeff, axis=0)
+    a_param = np.mean(ode_A.coeff, axis=0)
+    b_param = np.mean(ode_B.coeff, axis=0)
 
-    ode_A = ODE(a_param, np.asarray([False, False, False, False]), num_sys=A.shape[1])
-    ode_B = ODE(b_param, np.asarray([False, False, False, False]), num_sys=B.shape[1])
+    ode_A = ODE(a_param, np.asarray([False, False, False, False]), own_idx=0, num_sys=A.shape[1])
+    ode_B = ODE(b_param, np.asarray([False, False, False, False]), own_idx=1, num_sys=B.shape[1])
 
-    # print('A params %s, B params %s' % (a_param, b_param))
+    print('A params %s, B params %s' % (a_param, b_param))
 
     a = A[0, :].reshape(1, A.shape[1])
     b = B[0, :].reshape(1, B.shape[1])
-    a_history = []
-    b_history = []
-    for _ in np.arange(0, 300, 1):
-        a += ode_A.calc(a, b, dt=0.1)
-        b += ode_B.calc(a, b, dt=0.1)
-        a_history.append(a[0])
-        b_history.append(b[0])
+
+    a_history = [a[0]]
+    b_history = [b[0]]
+    for _ in np.arange(3000):
+        a_dev = ode_A.calc(a, b, dt=0.1)
+        b_dev = ode_B.calc(a, b, dt=0.1)
+        a += a_dev
+        b += b_dev
+        a_history.append(np.copy(a[0]))
+        b_history.append(np.copy(b[0]))
+
     fig, ax = plt.subplots(2, 2, figsize=(12, 7))
     ax[0][0].pcolor(np.asarray(A), vmin=A.min(), vmax=A.max())
     ax[0][1].pcolor(np.asarray(B), vmin=B.min(), vmax=B.max())
@@ -401,6 +245,6 @@ def test_main():
 
 
 if __name__ == '__main__':
-    main()
-    # test_main()
+    # main()
+    test_main()
 
