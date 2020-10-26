@@ -124,8 +124,6 @@ def main():
     pol_t30 = transcripts[2][0] - equilibrium
     cpd_t0 = transcripts[1][0]
     cpd_t30 = transcripts[3][0]
-    # TODO Use rescaled cpd t0 signal since basic assumption is that cpds become less and cannot re-create
-    cpd_t30 = np.minimum(cpd_t0, cpd_t30)
 
     del transcripts
     # all_values, _ = dh.get_values(bw_files)
@@ -134,36 +132,34 @@ def main():
     # pol_t30 = np.asarray(all_values[2])[from_idx:to_idx] - equilibrium
     # cpd_t0 = np.asarray(all_values[1])[from_idx:to_idx]
     # cpd_t30 = np.asarray(all_values[3])[from_idx:to_idx]
-    # cpd_t30 = np.minimum(cpd_t0, cpd_t30)
-
     # del all_values
 
     if VERBOSITY > 4:
         plot_data_hist(pol_t0, pol_t30, cpd_t0, cpd_t30, save_plot=save_plot, save_prefix=save_pref)
 
-    ode_cpd = ODE(np.random.random(len(restrict_cpd)), restrict_cpd, own_idx=0, num_sys=cpd_t0.size)
+    ode_cpd = ODE(np.random.random(len(restrict_cpd)), restrict_cpd, num_sys=cpd_t0.size)
     ode_pol = ODE(
         np.random.random(len(restrict_pol)),
         restrict_pol,
-        own_idx=1,
         num_sys=pol_t0.size,
         spatial_d=move_forward
     )
+    ODE.own_idx = 0
 
     cpd_data = np.asarray([cpd_t0, cpd_t30, np.zeros(cpd_t30.size)])
     pol_data = np.asarray([pol_t0, pol_t30, np.zeros(pol_t30.size)])
 
     # Interpolations
-    x = np.linspace(0, 10 * time_fact, num_points)
+    x = np.linspace(0, 18 * time_fact, num_points)
     if VERBOSITY > 3:
         plot_interpolation(x, pol_data, save_plot=save_plot, save_prefix=save_pref)
 
-    cpd_inter = interpolate.interp1d(np.asarray([0, 3, 10]) * time_fact, cpd_data.T, kind='quadratic')
-    pol_inter = interpolate.interp1d(np.asarray([0, 3, 10]) * time_fact, pol_data.T, kind='quadratic')
+    cpd_inter = interpolate.interp1d(np.asarray([0, 3, 18]) * time_fact, cpd_data.T, kind='quadratic')
+    pol_inter = interpolate.interp1d(np.asarray([0, 3, 18]) * time_fact, pol_data.T, kind='quadratic')
     cpd_data = cpd_inter(x)
     pol_data = pol_inter(x)
 
-    ode_pol, ode_cpd = fit(
+    ode_cpd, ode_pol = fit(
         np.asarray([cpd_data.T, pol_data.T]),
         [ode_cpd, ode_pol],
         x=x,
@@ -188,13 +184,13 @@ def main():
             ode_pol.coeff.std(axis=0)
         ))
 
-    pol_param_ode = np.zeros(len(restrict_pol))
-    pol_param_ode[~restrict_pol] = np.median(ode_pol.coeff, axis=0)
     cpd_param_ode = np.zeros(len(restrict_cpd))
     cpd_param_ode[~restrict_cpd] = np.median(ode_cpd.coeff, axis=0)
+    pol_param_ode = np.zeros(len(restrict_pol))
+    pol_param_ode[~restrict_pol] = np.median(ode_pol.coeff, axis=0)
 
-    ode_cpd = ODE(cpd_param_ode, restrict_cpd, own_idx=0, num_sys=cpd_t0.size)
-    ode_pol = ODE(pol_param_ode, restrict_pol, own_idx=1, num_sys=pol_t0.size, spatial_d=move_forward)
+    ode_cpd = ODE(cpd_param_ode, restrict_cpd, num_sys=cpd_t0.size)
+    ode_pol = ODE(pol_param_ode, restrict_pol, num_sys=pol_t0.size, spatial_d=move_forward)
     pos = np.arange(0, pol_t0.size)
 
     plt.ion()
@@ -239,8 +235,9 @@ def test_main():
     B = np.genfromtxt('data/B-rand.csv', delimiter=',')
     x = np.genfromtxt('data/Time.csv', delimiter=',')
 
-    ode_A = ODE(np.random.random(4), np.asarray([False, False, False, False]), own_idx=0, num_sys=A.shape[1])
-    ode_B = ODE(np.random.random(4), np.asarray([False, False, False, False]), own_idx=1, num_sys=B.shape[1])
+    ode_A = ODE(np.random.random(4), np.asarray([False, False, False, False]), num_sys=A.shape[1])
+    ode_B = ODE(np.random.random(4), np.asarray([False, False, False, False]), num_sys=B.shape[1])
+    ODE.own_idx = 0
 
     ode_A, ode_B = fit(
         np.asarray(A[:-1], B[:-1]),
@@ -270,8 +267,8 @@ def test_main():
     a_param = np.mean(ode_A.coeff, axis=0)
     b_param = np.mean(ode_B.coeff, axis=0)
 
-    ode_A = ODE(a_param, np.asarray([False, False, False, False]), own_idx=0, num_sys=A.shape[1])
-    ode_B = ODE(b_param, np.asarray([False, False, False, False]), own_idx=1, num_sys=B.shape[1])
+    ode_A = ODE(a_param, np.asarray([False, False, False, False]), num_sys=A.shape[1])
+    ode_B = ODE(b_param, np.asarray([False, False, False, False]), num_sys=B.shape[1])
 
     print('A params %s, B params %s' % (a_param, b_param))
 
