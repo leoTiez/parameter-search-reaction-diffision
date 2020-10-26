@@ -1,4 +1,6 @@
 #!/usr/bin/python3
+import os
+from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -28,6 +30,39 @@ def gravity_centre(hist, bins, ratio=0.8):
     return b, h
 
 
+def plot_data_hist(pol_t0, pol_t30, cpd_t0, cpd_t30, save_plot=False, save_prefix=''):
+    fig, ax = plt.subplots(2, 1, figsize=(12, 7))
+
+    ax[0].hist(pol_t0, bins='auto', alpha=0.4, label='t=0')
+    ax[0].hist(pol_t30, bins='auto', alpha=0.4, label='t=30')
+    ax[0].set_title('Histogram for Pol II')
+    ax[0].legend()
+
+    ax[1].hist(pol_t0[np.abs(pol_t0) > 1.], bins='auto', alpha=0.4, label='t=0 non-zero')
+    ax[1].hist(pol_t30[np.abs(pol_t30) > 1.], bins='auto', alpha=0.4, label='t=30 non-zero')
+    ax[1].set_title('Histogram for Pol II with deviation > 1')
+    ax[1].legend()
+
+    fig_c, ax_c = plt.subplots(2, 1, figsize=(12, 7))
+
+    ax_c[0].hist(cpd_t0, bins='auto', alpha=0.4, label='t=0')
+    ax_c[0].hist(cpd_t30, bins='auto', alpha=0.4, label='t=30')
+    ax_c[0].set_title('Histogram for CPD')
+    ax_c[0].legend()
+
+    ax_c[1].hist(cpd_t0[np.abs(cpd_t0) > 1.], bins='auto', alpha=0.4, label='t=0 non-zero')
+    ax_c[1].hist(cpd_t30[np.abs(cpd_t30) > 1.], bins='auto', alpha=0.4, label='t=30 non-zero')
+    ax_c[1].set_title('Histogram for CPD with deviation > 1')
+    ax_c[1].legend()
+
+    if save_plot:
+        curr_dir = os.getcwd()
+        Path('%s/figures/hist' % curr_dir).mkdir(parents=True, exist_ok=True)
+        plt.savefig('%s/figures/hist/%s_data_hist.png' % (curr_dir, save_prefix))
+    else:
+        plt.show()
+
+
 def main():
     bed_file = 'data/TSS_TES_steinmetz_jacquier.mRNA.bed'
     path_pol_nouv = 'data/L3_28_UV4_Pol2_noUV.BOWTIE.SacCer3.pe.bin1.RPM.rmdup.bamCoverage.bw'
@@ -40,8 +75,8 @@ def main():
     from_idx = int(1.001e6)
     to_idx = int(1.002e6)
     num_points = 100
-    restrict_pol = np.asarray([False, False, True, True])
-    restrict_cpd = np.asarray([False, True, True, True])
+    restrict_pol = np.asarray([False, False, True])
+    restrict_cpd = np.asarray([False, True, True])
 
     # ###############################################################################################
     # Transcript models
@@ -63,6 +98,7 @@ def main():
     pol_t30 = transcripts[2][0] - equilibrium
     cpd_t0 = transcripts[1][0]
     cpd_t30 = transcripts[3][0]
+    # TODO Use rescaled cpd t0 signal since basic assumption is that cpds become less and cannot re-create
     cpd_t30 = np.minimum(cpd_t0, cpd_t30)
 
     del transcripts
@@ -72,48 +108,23 @@ def main():
     # pol_t30 = np.asarray(all_values[2])[from_idx:to_idx] - equilibrium
     # cpd_t0 = np.asarray(all_values[1])[from_idx:to_idx]
     # cpd_t30 = np.asarray(all_values[3])[from_idx:to_idx]
-    # # TODO Use rescaled cpd t0 signal since basic assumption is that cpds become less and cannot re-create
     # cpd_t30 = np.minimum(cpd_t0, cpd_t30)
 
     # del all_values
 
     if VERBOSITY > 4:
-        fig, ax = plt.subplots(2, 1, figsize=(12, 7))
+        plot_data_hist(pol_t0, pol_t30, cpd_t0, cpd_t30)
 
-        ax[0].hist(pol_t0, bins='auto', alpha=0.4, label='t=0')
-        ax[0].hist(pol_t30, bins='auto', alpha=0.4, label='t=30')
-        ax[0].set_title('Histogram for Pol II')
-        ax[0].legend()
-
-        ax[1].hist(pol_t0[np.abs(pol_t0) > 1.], bins='auto', alpha=0.4, label='t=0 non-zero')
-        ax[1].hist(pol_t30[np.abs(pol_t30) > 1.], bins='auto', alpha=0.4, label='t=30 non-zero')
-        ax[1].set_title('Histogram for Pol II with deviation > 1')
-        ax[1].legend()
-
-        fig_c, ax_c = plt.subplots(2, 1, figsize=(12, 7))
-
-        ax_c[0].hist(cpd_t0, bins='auto', alpha=0.4, label='t=0')
-        ax_c[0].hist(cpd_t30, bins='auto', alpha=0.4, label='t=30')
-        ax_c[0].set_title('Histogram for CPD')
-        ax_c[0].legend()
-
-        ax_c[1].hist(cpd_t0[np.abs(cpd_t0) > 1.], bins='auto', alpha=0.4, label='t=0 non-zero')
-        ax_c[1].hist(cpd_t30[np.abs(cpd_t30) > 1.], bins='auto', alpha=0.4, label='t=30 non-zero')
-        ax_c[1].set_title('Histogram for CPD with deviation > 1')
-        ax_c[1].legend()
-
-        plt.show()
-
-    ode_pol = ODE(np.random.random(4), restrict_pol, num_sys=pol_t0.size)
-    ode_cpd = ODE(np.random.random(4), restrict_cpd, num_sys=cpd_t0.size)
+    ode_pol = ODE(np.random.random(len(restrict_pol)), restrict_pol, num_sys=pol_t0.size)
+    ode_cpd = ODE(np.random.random(len(restrict_cpd)), restrict_cpd, num_sys=cpd_t0.size)
 
     pol_data = np.asarray([pol_t0, pol_t30, np.zeros(pol_t30.size)])
     cpd_data = np.asarray([cpd_t0, cpd_t30, np.zeros(cpd_t30.size)])
 
     # Interpolations
-    x = np.linspace(0, 10, num_points)
-    pol_inter = interpolate.interp1d(np.asarray([0, 3, 10]), pol_data.T, kind='quadratic')
-    cpd_inter = interpolate.interp1d(np.asarray([0, 3, 10]), cpd_data.T, kind='quadratic')
+    x = np.linspace(0, 100, num_points)
+    pol_inter = interpolate.interp1d(np.asarray([0, 30, 100]), pol_data.T, kind='linear')
+    cpd_inter = interpolate.interp1d(np.asarray([0, 30, 100]), cpd_data.T, kind='linear')
     pol_data = pol_inter(x)
     cpd_data = cpd_inter(x)
 
@@ -133,10 +144,8 @@ def main():
         plt.show()
 
     ode_pol, ode_cpd = fit(
-        pol_data.T,
-        cpd_data.T,
-        ode_pol,
-        ode_cpd,
+        np.asarray([pol_data.T, cpd_data.T]),
+        [ode_pol, ode_cpd],
         x=x,
         degree=5,
         w_model=1.,
@@ -151,9 +160,9 @@ def main():
         print('CPD coefficients have a median of %s, a mean of %s with a variance of %s and a std of %s' %
               (np.median(ode_cpd.coeff, axis=0), ode_cpd.coeff.mean(axis=0), ode_cpd.coeff.var(axis=0), ode_cpd.coeff.std(axis=0)))
 
-    pol_param_ode = np.zeros(4)
+    pol_param_ode = np.zeros(len(restrict_pol))
     pol_param_ode[~restrict_pol] = np.median(ode_pol.coeff, axis=0)
-    cpd_param_ode = np.zeros(4)
+    cpd_param_ode = np.zeros(len(restrict_cpd))
     cpd_param_ode[~restrict_cpd] = np.median(ode_cpd.coeff, axis=0)
 
     ode_pol = ODE(pol_param_ode, restrict_pol, num_sys=pol_t0.size)
@@ -180,10 +189,10 @@ def main():
 
     pol = pol_t0.reshape(1, pol_t0.size)
     cpd = cpd_t0.reshape(1, cpd_t0.size)
-    for time in range(10000):
-        t.set_text('%s min' % (10. * time * dt))
-        pol_new = ode_pol.calc(pol, cpd, dt=dt)
-        cpd_new = ode_cpd.calc(pol, cpd, dt=dt)
+    for time in range(1000):
+        t.set_text('%s min' % '{:.2f}'.format(time * dt))
+        pol_new = ode_pol.calc(np.asarray([pol, cpd]), dt=dt)
+        cpd_new = ode_cpd.calc(np.asarray([pol, cpd]), dt=dt)
         pol += pol_new
         cpd += cpd_new
 
