@@ -20,12 +20,12 @@ class ODE:
         self.spatial_d = spatial_d
         self.num_sys = num_sys
 
-    def calc(self, diffs_pol, diffs_cpd, dt=.1):
-        conc = self.conc_params(diffs_pol, diffs_cpd)
+    def calc(self, diffs, dt=.1):
+        conc = self.conc_params(diffs)
         return dt * np.einsum('ki,ijk->jk', self.coeff, conc)
 
-    def conc_params(self, diffs_pol, diffs_cpd):
-        own_spec = [diffs_pol, diffs_cpd][self.own_idx]
+    def conc_params(self, diffs):
+        own_spec = diffs[self.own_idx]
         spatial_diff = self.spatial_d(own_spec)
-        conc = np.asarray([diffs_pol, diffs_cpd, np.power(own_spec, 3), spatial_diff])
+        conc = np.dstack((diffs.T, spatial_diff.T)).T
         return conc[~self.restrictions, :, :]
