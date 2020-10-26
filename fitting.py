@@ -120,8 +120,10 @@ def fit(
                 print('MIN Diff b spline %s' % np.linalg.norm(b_coff - bspline.c, axis=0).min())
                 print('RATIO b spline factors under thresh %s\n' % s)
 
-        print('All Success %s' % success)
-        print('Old Success%s' % success_old)
+        if verbosity > 1:
+            print('All Success %s' % success)
+            print('Old Success%s' % success_old)
+
         if np.all(np.asarray(success)):
             break
         if counter > max_iter:
