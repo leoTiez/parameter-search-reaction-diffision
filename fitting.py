@@ -43,6 +43,7 @@ def fit(
         delta=1e-8,
         w_model=1.0,
         success_ratio=0.97,
+        max_iter=1200,
         verbosity=0
 ):
     # create example t, as they should be the same for all data values along the genome
@@ -68,6 +69,8 @@ def fit(
         fig.canvas.draw()
         fig.canvas.flush_events()
 
+    success_pol_old = -1.
+    success_cpd_old = -1.
     while True:
         if verbosity > 2:
             b_line_a.set_ydata(bspline_pol(x)[:, 0])
@@ -107,10 +110,16 @@ def fit(
         success_cpd = (
                               np.linalg.norm(b_coff_cpd - bspline_cpd.c, axis=0) < delta
                       ).astype('int').sum() / float(y_cpd.shape[1])
-        if success_pol > success_ratio and success_cpd > success_ratio:
+
+        condition_pol = success_pol > success_ratio and np.abs(success_pol - success_pol_old) < delta
+        condition_cpd = success_cpd > success_ratio and np.abs(success_cpd - success_cpd_old) < delta
+        if condition_pol and condition_cpd:
             break
-        if counter > 1200:
+        if counter > max_iter:
             break
+
+        success_pol_old = success_pol
+        success_cpd_old = success_cpd
 
         if verbosity > 0:
             print('Counter %s' % counter)
