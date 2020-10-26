@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 import seqDataHandler as dh
-from ODE import ODE
+from ODE import ODE, nabla_sq_1d, move_forward
 from fitting import fit
 from scipy import interpolate
 
@@ -63,6 +63,29 @@ def plot_data_hist(pol_t0, pol_t30, cpd_t0, cpd_t30, save_plot=False, save_prefi
         plt.show()
 
 
+def plot_interpolation(x, pol_data, save_plot=False, save_prefix=''):
+    i_lin = interpolate.interp1d(np.arange(pol_data.shape[0]), pol_data.T[0], kind='linear')
+    i_near = interpolate.interp1d(np.arange(pol_data.shape[0]), pol_data.T[0], kind='nearest')
+    i_zero = interpolate.interp1d(np.arange(pol_data.shape[0]), pol_data.T[0], kind='zero')
+    i_slin = interpolate.interp1d(np.arange(pol_data.shape[0]), pol_data.T[0], kind='slinear')
+    i_quad = interpolate.interp1d(np.arange(pol_data.shape[0]), pol_data.T[0], kind='quadratic')
+    plt.plot(x, i_lin(x), label='linear')
+    plt.plot(x, i_near(x), label='nearest')
+    plt.plot(x, i_zero(x), label='zero')
+    plt.plot(x, i_slin(x), label='slinear')
+    plt.plot(x, i_quad(x), label='quadratic')
+
+    plt.plot(np.arange(pol_data.shape[0]), pol_data.T[0], marker='o')
+    plt.legend()
+
+    if save_plot:
+        curr_dir = os.getcwd()
+        Path('%s/figures/interp' % curr_dir).mkdir(parents=True, exist_ok=True)
+        plt.savefig('%s/figures/interp/%s_interpolation.png' % (curr_dir, save_prefix))
+    else:
+        plt.show()
+
+
 def main():
     bed_file = 'data/TSS_TES_steinmetz_jacquier.mRNA.bed'
     path_pol_nouv = 'data/L3_28_UV4_Pol2_noUV.BOWTIE.SacCer3.pe.bin1.RPM.rmdup.bamCoverage.bw'
@@ -74,7 +97,10 @@ def main():
     dt = 0.1
     from_idx = int(1.001e6)
     to_idx = int(1.002e6)
+    save_pref = ''
+    save_plot = False
     num_points = 100
+    time_fact = 10
     restrict_pol = np.asarray([False, False, True])
     restrict_cpd = np.asarray([False, True, True])
 
@@ -113,39 +139,33 @@ def main():
     # del all_values
 
     if VERBOSITY > 4:
-        plot_data_hist(pol_t0, pol_t30, cpd_t0, cpd_t30)
+        plot_data_hist(pol_t0, pol_t30, cpd_t0, cpd_t30, save_plot=save_plot, save_prefix=save_pref)
 
-    ode_pol = ODE(np.random.random(len(restrict_pol)), restrict_pol, num_sys=pol_t0.size)
-    ode_cpd = ODE(np.random.random(len(restrict_cpd)), restrict_cpd, num_sys=cpd_t0.size)
+    ode_cpd = ODE(np.random.random(len(restrict_cpd)), restrict_cpd, own_idx=0, num_sys=cpd_t0.size)
+    ode_pol = ODE(
+        np.random.random(len(restrict_pol)),
+        restrict_pol,
+        own_idx=1,
+        num_sys=pol_t0.size,
+        spatial_d=move_forward
+    )
 
-    pol_data = np.asarray([pol_t0, pol_t30, np.zeros(pol_t30.size)])
     cpd_data = np.asarray([cpd_t0, cpd_t30, np.zeros(cpd_t30.size)])
+    pol_data = np.asarray([pol_t0, pol_t30, np.zeros(pol_t30.size)])
 
     # Interpolations
-    x = np.linspace(0, 100, num_points)
-    pol_inter = interpolate.interp1d(np.asarray([0, 30, 100]), pol_data.T, kind='linear')
-    cpd_inter = interpolate.interp1d(np.asarray([0, 30, 100]), cpd_data.T, kind='linear')
-    pol_data = pol_inter(x)
-    cpd_data = cpd_inter(x)
-
+    x = np.linspace(0, 10 * time_fact, num_points)
     if VERBOSITY > 3:
-        i_lin = interpolate.interp1d(np.arange(pol_data.shape[0]), pol_data.T[0], kind='linear')
-        i_near = interpolate.interp1d(np.arange(pol_data.shape[0]), pol_data.T[0], kind='nearest')
-        i_zero = interpolate.interp1d(np.arange(pol_data.shape[0]), pol_data.T[0], kind='zero')
-        i_slin = interpolate.interp1d(np.arange(pol_data.shape[0]), pol_data.T[0], kind='slinear')
-        plt.plot(x, i_lin(x), label='linear')
-        plt.plot(x, i_near(x), label='nearest')
-        plt.plot(x, i_zero(x), label='zero')
-        plt.plot(x, i_slin(x), label='slinear')
-        plt.plot(x, pol_inter(x)[0], label='quadratic')
+        plot_interpolation(x, pol_data, save_plot=save_plot, save_prefix=save_pref)
 
-        plt.plot(np.arange(pol_data.shape[0]), pol_data.T[0], marker='o')
-        plt.legend()
-        plt.show()
+    cpd_inter = interpolate.interp1d(np.asarray([0, 3, 10]) * time_fact, cpd_data.T, kind='quadratic')
+    pol_inter = interpolate.interp1d(np.asarray([0, 3, 10]) * time_fact, pol_data.T, kind='quadratic')
+    cpd_data = cpd_inter(x)
+    pol_data = pol_inter(x)
 
     ode_pol, ode_cpd = fit(
-        np.asarray([pol_data.T, cpd_data.T]),
-        [ode_pol, ode_cpd],
+        np.asarray([cpd_data.T, pol_data.T]),
+        [ode_cpd, ode_pol],
         x=x,
         degree=5,
         w_model=1.,
@@ -154,19 +174,27 @@ def main():
     )
 
     if VERBOSITY > 0:
-        print('Pol coefficients have a median of %s, a mean of %s with a variance of %s and a std of %s' %
-              (np.median(ode_pol.coeff, axis=0), ode_pol.coeff.mean(axis=0), ode_pol.coeff.var(axis=0), ode_pol.coeff.std(axis=0)))
+        print('CPD coefficients have a median of %s, a mean of %s with a variance of %s and a std of %s' % (
+            np.median(ode_cpd.coeff, axis=0),
+            ode_cpd.coeff.mean(axis=0),
+            ode_cpd.coeff.var(axis=0),
+            ode_cpd.coeff.std(axis=0)
+        ))
 
-        print('CPD coefficients have a median of %s, a mean of %s with a variance of %s and a std of %s' %
-              (np.median(ode_cpd.coeff, axis=0), ode_cpd.coeff.mean(axis=0), ode_cpd.coeff.var(axis=0), ode_cpd.coeff.std(axis=0)))
+        print('Pol coefficients have a median of %s, a mean of %s with a variance of %s and a std of %s' % (
+            np.median(ode_pol.coeff, axis=0),
+            ode_pol.coeff.mean(axis=0),
+            ode_pol.coeff.var(axis=0),
+            ode_pol.coeff.std(axis=0)
+        ))
 
     pol_param_ode = np.zeros(len(restrict_pol))
     pol_param_ode[~restrict_pol] = np.median(ode_pol.coeff, axis=0)
     cpd_param_ode = np.zeros(len(restrict_cpd))
     cpd_param_ode[~restrict_cpd] = np.median(ode_cpd.coeff, axis=0)
 
-    ode_pol = ODE(pol_param_ode, restrict_pol, num_sys=pol_t0.size)
-    ode_cpd = ODE(cpd_param_ode, restrict_cpd, num_sys=cpd_t0.size)
+    ode_cpd = ODE(cpd_param_ode, restrict_cpd, own_idx=0, num_sys=cpd_t0.size)
+    ode_pol = ODE(pol_param_ode, restrict_pol, own_idx=1, num_sys=pol_t0.size, spatial_d=move_forward)
     pos = np.arange(0, pol_t0.size)
 
     plt.ion()
@@ -187,17 +215,17 @@ def main():
     fig.canvas.draw()
     fig.canvas.flush_events()
 
-    pol = pol_t0.reshape(1, pol_t0.size)
     cpd = cpd_t0.reshape(1, cpd_t0.size)
+    pol = pol_t0.reshape(1, pol_t0.size)
     for time in range(1000):
-        t.set_text('%s min' % '{:.2f}'.format(time * dt))
-        pol_new = ode_pol.calc(np.asarray([pol, cpd]), dt=dt)
+        t.set_text('%s min' % '{:.2f}'.format(time * dt * time_fact))
         cpd_new = ode_cpd.calc(np.asarray([pol, cpd]), dt=dt)
-        pol += pol_new
+        pol_new = ode_pol.calc(np.asarray([pol, cpd]), dt=dt)
         cpd += cpd_new
+        pol += pol_new
 
-        line_pol.set_ydata(equilibrium + pol.reshape(-1))
         line_cpd.set_ydata(cpd.reshape(-1))
+        line_pol.set_ydata(equilibrium + pol.reshape(-1))
         fig.canvas.draw()
         fig.canvas.flush_events()
 
@@ -215,10 +243,8 @@ def test_main():
     ode_B = ODE(np.random.random(4), np.asarray([False, False, False, False]), own_idx=1, num_sys=B.shape[1])
 
     ode_A, ode_B = fit(
-        A[:-1],
-        B[:-1],
-        ode_A,
-        ode_B,
+        np.asarray(A[:-1], B[:-1]),
+        [ode_A, ode_B],
         x=x,
         w_model=1.,
         degree=5, # Finding ===> Is very sensitive to the degree. Using degree of 4 or 5 works perfect
