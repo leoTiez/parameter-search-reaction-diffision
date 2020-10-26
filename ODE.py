@@ -13,10 +13,13 @@ def move_forward(substance, h=1, axis=1):
 
 
 class ODE:
-    def __init__(self, coeff, restrictions, own_idx=0, spatial_d=nabla_sq_1d, num_sys=10000):
+    own_idx = 0
+
+    def __init__(self, coeff, restrictions, spatial_d=nabla_sq_1d, num_sys=10000):
         self.restrictions = restrictions
         self.coeff = np.array([coeff[~self.restrictions], ] * num_sys)
-        self.own_idx = own_idx
+        self.own_idx = ODE.own_idx
+        ODE.own_idx += 1
         self.spatial_d = spatial_d
         self.num_sys = num_sys
 
