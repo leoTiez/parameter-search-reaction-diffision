@@ -1,10 +1,13 @@
 #!/usr/bin/python3
+import os
+from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 
 import seqDataHandler as dh
-from ODE import ODE
+from ODE import ODE, nabla_sq_1d, move_forward
 from fitting import fit
+from scipy import interpolate
 
 VERBOSITY = 3
 
@@ -27,19 +30,83 @@ def gravity_centre(hist, bins, ratio=0.8):
     return b, h
 
 
+def plot_data_hist(pol_t0, pol_t30, cpd_t0, cpd_t30, save_plot=False, save_prefix=''):
+    fig, ax = plt.subplots(2, 1, figsize=(12, 7))
+
+    ax[0].hist(pol_t0, bins='auto', alpha=0.4, label='t=0')
+    ax[0].hist(pol_t30, bins='auto', alpha=0.4, label='t=30')
+    ax[0].set_title('Histogram for Pol II')
+    ax[0].legend()
+
+    ax[1].hist(pol_t0[np.abs(pol_t0) > 1.], bins='auto', alpha=0.4, label='t=0 non-zero')
+    ax[1].hist(pol_t30[np.abs(pol_t30) > 1.], bins='auto', alpha=0.4, label='t=30 non-zero')
+    ax[1].set_title('Histogram for Pol II with deviation > 1')
+    ax[1].legend()
+
+    fig_c, ax_c = plt.subplots(2, 1, figsize=(12, 7))
+
+    ax_c[0].hist(cpd_t0, bins='auto', alpha=0.4, label='t=0')
+    ax_c[0].hist(cpd_t30, bins='auto', alpha=0.4, label='t=30')
+    ax_c[0].set_title('Histogram for CPD')
+    ax_c[0].legend()
+
+    ax_c[1].hist(cpd_t0[np.abs(cpd_t0) > 1.], bins='auto', alpha=0.4, label='t=0 non-zero')
+    ax_c[1].hist(cpd_t30[np.abs(cpd_t30) > 1.], bins='auto', alpha=0.4, label='t=30 non-zero')
+    ax_c[1].set_title('Histogram for CPD with deviation > 1')
+    ax_c[1].legend()
+
+    if save_plot:
+        curr_dir = os.getcwd()
+        Path('%s/figures/hist' % curr_dir).mkdir(parents=True, exist_ok=True)
+        plt.savefig('%s/figures/hist/%s_data_hist.png' % (curr_dir, save_prefix))
+    else:
+        plt.show()
+
+
+def plot_interpolation(x, pol_data, save_plot=False, save_prefix=''):
+    i_lin = interpolate.interp1d(np.arange(pol_data.shape[0]), pol_data.T[0], kind='linear')
+    i_near = interpolate.interp1d(np.arange(pol_data.shape[0]), pol_data.T[0], kind='nearest')
+    i_zero = interpolate.interp1d(np.arange(pol_data.shape[0]), pol_data.T[0], kind='zero')
+    i_slin = interpolate.interp1d(np.arange(pol_data.shape[0]), pol_data.T[0], kind='slinear')
+    i_quad = interpolate.interp1d(np.arange(pol_data.shape[0]), pol_data.T[0], kind='quadratic')
+    plt.plot(x, i_lin(x), label='linear')
+    plt.plot(x, i_near(x), label='nearest')
+    plt.plot(x, i_zero(x), label='zero')
+    plt.plot(x, i_slin(x), label='slinear')
+    plt.plot(x, i_quad(x), label='quadratic')
+
+    plt.plot(np.arange(pol_data.shape[0]), pol_data.T[0], marker='o')
+    plt.legend()
+
+    if save_plot:
+        curr_dir = os.getcwd()
+        Path('%s/figures/interp' % curr_dir).mkdir(parents=True, exist_ok=True)
+        plt.savefig('%s/figures/interp/%s_interpolation.png' % (curr_dir, save_prefix))
+    else:
+        plt.show()
+
+
 def main():
+    bed_file = 'data/TSS_TES_steinmetz_jacquier.mRNA.bed'
     path_pol_nouv = 'data/L3_28_UV4_Pol2_noUV.BOWTIE.SacCer3.pe.bin1.RPM.rmdup.bamCoverage.bw'
     path_pol_t0 = 'data/L3_29_UV4_Pol2_T0.BOWTIE.SacCer3.pe.bin1.RPM.rmdup.bamCoverage.bw'
     path_pol_t30 = 'data/L3_30_UV4_Pol2_T30.BOWTIE.SacCer3.pe.bin1.RPM.rmdup.bamCoverage.bw'
     path_cpd_t0 = 'data/L3_32_UV4_CPD_T0.BOWTIE.SacCer3.pe.bin1.RPM.rmdup.bamCoverage.bw'
     path_cpd_t30 = 'data/L3_33_UV4_CPD_T30.BOWTIE.SacCer3.pe.bin1.RPM.rmdup.bamCoverage.bw'
+
     dt = 0.1
     from_idx = int(1.001e6)
     to_idx = int(1.002e6)
+    save_pref = ''
+    save_plot = False
+    num_points = 100
+    time_fact = 10
+    restrict_pol = np.asarray([False, False, True])
+    restrict_cpd = np.asarray([False, True, True])
+
     # ###############################################################################################
     # Transcript models
     # ###############################################################################################
-
     bw_files = []
     for path in [path_pol_t0, path_cpd_t0, path_pol_t30, path_cpd_t30, path_pol_nouv]:
         bw_files.append(
@@ -49,100 +116,81 @@ def main():
             )
         )
 
-    all_values, _ = dh.get_values(bw_files)
-    equilibrium = np.asarray(all_values[4])[from_idx:to_idx]
-    pol_t0 = np.asarray(all_values[0])[from_idx:to_idx] - equilibrium
-    pol_t30 = np.asarray(all_values[2])[from_idx:to_idx] - equilibrium
-    cpd_t0 = np.asarray(all_values[1])[from_idx:to_idx]
-    cpd_t30 = np.asarray(all_values[3])[from_idx:to_idx]
-    # TODO Use rescaled cpd t0 signal since basic assumption is that cpds become less and cannot re-create
-    cpd_t30 = np.minimum(cpd_t0, cpd_t30)
+    bed = dh.load_bam_bed_file(bed_file, rel_path='')
 
-    del all_values
+    transcripts, _, _, _ = dh.normalise_over_annotation(bw_files, bed, normalise=False)
+    equilibrium = transcripts[4][0]
+    pol_t0 = transcripts[0][0] - equilibrium
+    pol_t30 = transcripts[2][0] - equilibrium
+    cpd_t0 = transcripts[1][0]
+    cpd_t30 = transcripts[3][0]
 
-    if VERBOSITY > 1:
-        fig, ax = plt.subplots(2, 1, figsize=(12, 7))
+    del transcripts
+    # all_values, _ = dh.get_values(bw_files)
+    # equilibrium = np.asarray(all_values[4])[from_idx:to_idx]
+    # pol_t0 = np.asarray(all_values[0])[from_idx:to_idx] - equilibrium
+    # pol_t30 = np.asarray(all_values[2])[from_idx:to_idx] - equilibrium
+    # cpd_t0 = np.asarray(all_values[1])[from_idx:to_idx]
+    # cpd_t30 = np.asarray(all_values[3])[from_idx:to_idx]
+    # del all_values
 
-        ax[0].hist(pol_t0, bins='auto', alpha=0.4, label='t=0')
-        ax[0].hist(pol_t30, bins='auto', alpha=0.4, label='t=30')
-        ax[0].set_title('Histogram for Pol II')
-        ax[0].legend()
+    if VERBOSITY > 4:
+        plot_data_hist(pol_t0, pol_t30, cpd_t0, cpd_t30, save_plot=save_plot, save_prefix=save_pref)
 
-        ax[1].hist(pol_t0[np.abs(pol_t0) > 1.], bins='auto', alpha=0.4, label='t=0 non-zero')
-        ax[1].hist(pol_t30[np.abs(pol_t30) > 1.], bins='auto', alpha=0.4, label='t=30 non-zero')
-        ax[1].set_title('Histogram for Pol II with deviation > 1')
-        ax[1].legend()
+    ode_cpd = ODE(np.random.random(len(restrict_cpd)), restrict_cpd, num_sys=cpd_t0.size)
+    ode_pol = ODE(
+        np.random.random(len(restrict_pol)),
+        restrict_pol,
+        num_sys=pol_t0.size,
+        spatial_d=move_forward
+    )
+    ODE.own_idx = 0
 
-        fig_c, ax_c = plt.subplots(2, 1, figsize=(12, 7))
+    cpd_data = np.asarray([cpd_t0, cpd_t30, np.zeros(cpd_t30.size)])
+    pol_data = np.asarray([pol_t0, pol_t30, np.zeros(pol_t30.size)])
 
-        ax_c[0].hist(cpd_t0, bins='auto', alpha=0.4, label='t=0')
-        ax_c[0].hist(cpd_t30, bins='auto', alpha=0.4, label='t=30')
-        ax_c[0].set_title('Histogram for CPD')
-        ax_c[0].legend()
+    # Interpolations
+    x = np.linspace(0, 18 * time_fact, num_points)
+    if VERBOSITY > 3:
+        plot_interpolation(x, pol_data, save_plot=save_plot, save_prefix=save_pref)
 
-        ax_c[1].hist(cpd_t0[np.abs(cpd_t0) > 1.], bins='auto', alpha=0.4, label='t=0 non-zero')
-        ax_c[1].hist(cpd_t30[np.abs(cpd_t30) > 1.], bins='auto', alpha=0.4, label='t=30 non-zero')
-        ax_c[1].set_title('Histogram for CPD with deviation > 1')
-        ax_c[1].legend()
+    cpd_inter = interpolate.interp1d(np.asarray([0, 3, 18]) * time_fact, cpd_data.T, kind='quadratic')
+    pol_inter = interpolate.interp1d(np.asarray([0, 3, 18]) * time_fact, pol_data.T, kind='quadratic')
+    cpd_data = cpd_inter(x)
+    pol_data = pol_inter(x)
 
-        plt.show()
-
-    # TODO Why is the spatial influence a problem?
-    ode_pol = ODE(np.asarray([-1, 2, 0.1, 1]), np.asarray([False, False, False, True]), num_sys=pol_t0.size)
-    ode_cpd = ODE(np.asarray([-1, 0, 0, 0]), np.asarray([False, True, True, True]), num_sys=cpd_t0.size)
-
-    ode_pol, ode_cpd = fit(
-        np.asarray([pol_t0, pol_t30, np.zeros(pol_t30.size)]),
-        np.asarray([cpd_t0, cpd_t30, np.zeros(cpd_t30.size)]),
-        ode_pol,
-        ode_cpd,
-        x=np.asarray([0, 3, 8]),
-        degree=2,
+    ode_cpd, ode_pol = fit(
+        np.asarray([cpd_data.T, pol_data.T]),
+        [ode_cpd, ode_pol],
+        x=x,
+        degree=5,
         w_model=1.,
+        success_ratio=0.9,
         verbosity=VERBOSITY
     )
 
     if VERBOSITY > 0:
-        print('Pol coefficients have a mean of %s with a variance of %s and a std of %s' %
-              (ode_pol.coeff.mean(axis=0), ode_pol.coeff.var(axis=0), ode_pol.coeff.std(axis=0)))
+        print('CPD coefficients have a median of %s, a mean of %s with a variance of %s and a std of %s' % (
+            np.median(ode_cpd.coeff, axis=0),
+            ode_cpd.coeff.mean(axis=0),
+            ode_cpd.coeff.var(axis=0),
+            ode_cpd.coeff.std(axis=0)
+        ))
 
-        print('CPD coefficients have a mean of %s with a variance of %s and a std of %s' %
-              (ode_cpd.coeff.mean(axis=0), ode_cpd.coeff.var(axis=0), ode_cpd.coeff.std(axis=0)))
+        print('Pol coefficients have a median of %s, a mean of %s with a variance of %s and a std of %s' % (
+            np.median(ode_pol.coeff, axis=0),
+            ode_pol.coeff.mean(axis=0),
+            ode_pol.coeff.var(axis=0),
+            ode_pol.coeff.std(axis=0)
+        ))
 
-    pol_param = np.zeros(4)
-    for c in range(ode_pol.coeff.shape[1]):
-        hist, bins = np.histogram(ode_pol.coeff[:, c], bins='auto')
-        bins = bins[:-1]
-        b, h = gravity_centre(hist, bins)
-        pol_param[c] = b.mean()
+    cpd_param_ode = np.zeros(len(restrict_cpd))
+    cpd_param_ode[~restrict_cpd] = np.median(ode_cpd.coeff, axis=0)
+    pol_param_ode = np.zeros(len(restrict_pol))
+    pol_param_ode[~restrict_pol] = np.median(ode_pol.coeff, axis=0)
 
-        if VERBOSITY > 1:
-            plt.bar(b, h, width=0.5, alpha=0.4, label='Coeff %s' % c)
-
-    if VERBOSITY > 1:
-        plt.legend()
-        plt.show()
-
-    cpd_param = np.zeros(4)
-    for c in range(ode_cpd.coeff.shape[1]):
-        hist, bins = np.histogram(ode_cpd.coeff[:, c], bins='auto')
-        bins = bins[:-1]
-        b, h = gravity_centre(hist, bins)
-        cpd_param[c] = b.mean()
-        if VERBOSITY > 1:
-            plt.bar(b, h, width=0.5, alpha=0.4, label='Coeff %s' % c)
-
-    if VERBOSITY > 1:
-        plt.legend()
-        plt.show()
-
-    pol_param_ode = np.zeros(4)
-    pol_param_ode[:len(pol_param)] = pol_param
-    cpd_param_ode = np.zeros(4)
-    cpd_param_ode[:len(cpd_param)] = cpd_param
-
-    ode_pol = ODE(pol_param_ode, np.asarray([False, False, False, False]), num_sys=pol_t0.size)
-    ode_cpd = ODE(cpd_param_ode, np.asarray([False, True, True, True]), num_sys=cpd_t0.size)
+    ode_cpd = ODE(cpd_param_ode, restrict_cpd, num_sys=cpd_t0.size)
+    ode_pol = ODE(pol_param_ode, restrict_pol, num_sys=pol_t0.size, spatial_d=move_forward)
     pos = np.arange(0, pol_t0.size)
 
     plt.ion()
@@ -151,24 +199,29 @@ def main():
     line_pol, = ax[0].plot(pos, equilibrium + pol_t0, label='Pol2')
     ax[0].plot(pos, equilibrium + pol_t30, label='Pol2 30')
     ax[0].plot(pos, equilibrium, label='Pol2 no UV')
+    ax[0].legend(loc='upper right')
 
     ax[1].plot(pos, cpd_t0, label='CPD 0')
     line_cpd, = ax[1].plot(pos, cpd_t0, label='CPD')
     ax[1].plot(pos, cpd_t30, label='CPD 30')
-    plt.legend(loc='upper right')
+    ax[1].legend(loc='upper right')
+
+    t = plt.title('%s min' % 0)
+
     fig.canvas.draw()
     fig.canvas.flush_events()
 
-    pol = pol_t0.reshape(1, pol_t0.size)
     cpd = cpd_t0.reshape(1, cpd_t0.size)
-    for time in range(10000):
-        pol_new = ode_pol.calc(pol, cpd, dt=dt)
-        cpd_new = ode_cpd.calc(pol, cpd, dt=dt)
+    pol = pol_t0.reshape(1, pol_t0.size)
+    for time in range(1000):
+        t.set_text('%s min' % '{:.2f}'.format(time * dt * time_fact))
+        cpd_new = ode_cpd.calc(np.asarray([pol, cpd]), dt=dt)
+        pol_new = ode_pol.calc(np.asarray([pol, cpd]), dt=dt)
         cpd += cpd_new
         pol += pol_new
 
-        line_pol.set_ydata(equilibrium + pol.reshape(-1))
         line_cpd.set_ydata(cpd.reshape(-1))
+        line_pol.set_ydata(equilibrium + pol.reshape(-1))
         fig.canvas.draw()
         fig.canvas.flush_events()
 
@@ -182,14 +235,13 @@ def test_main():
     B = np.genfromtxt('data/B-rand.csv', delimiter=',')
     x = np.genfromtxt('data/Time.csv', delimiter=',')
 
-    ode_A = ODE(np.random.random(4), np.asarray([False, False, False, False]), own_idx=0, num_sys=A.shape[1])
-    ode_B = ODE(np.random.random(4), np.asarray([False, False, False, False]), own_idx=1, num_sys=B.shape[1])
+    ode_A = ODE(np.random.random(4), np.asarray([False, False, False, False]), num_sys=A.shape[1])
+    ode_B = ODE(np.random.random(4), np.asarray([False, False, False, False]), num_sys=B.shape[1])
+    ODE.own_idx = 0
 
     ode_A, ode_B = fit(
-        A[:-1],
-        B[:-1],
-        ode_A,
-        ode_B,
+        np.asarray(A[:-1], B[:-1]),
+        [ode_A, ode_B],
         x=x,
         w_model=1.,
         degree=5, # Finding ===> Is very sensitive to the degree. Using degree of 4 or 5 works perfect
@@ -215,8 +267,8 @@ def test_main():
     a_param = np.mean(ode_A.coeff, axis=0)
     b_param = np.mean(ode_B.coeff, axis=0)
 
-    ode_A = ODE(a_param, np.asarray([False, False, False, False]), own_idx=0, num_sys=A.shape[1])
-    ode_B = ODE(b_param, np.asarray([False, False, False, False]), own_idx=1, num_sys=B.shape[1])
+    ode_A = ODE(a_param, np.asarray([False, False, False, False]), num_sys=A.shape[1])
+    ode_B = ODE(b_param, np.asarray([False, False, False, False]), num_sys=B.shape[1])
 
     print('A params %s, B params %s' % (a_param, b_param))
 
@@ -235,16 +287,20 @@ def test_main():
 
     fig, ax = plt.subplots(2, 2, figsize=(12, 7))
     ax[0][0].pcolor(np.asarray(A), vmin=A.min(), vmax=A.max())
+    ax[0][0].set_title('Species A')
     ax[0][1].pcolor(np.asarray(B), vmin=B.min(), vmax=B.max())
+    ax[0][1].set_title('Species B')
     amin, amax = np.asarray(a_history).min(), np.asarray(a_history).max()
     bmin, bmax = np.asarray(b_history).min(), np.asarray(b_history).max()
+    ax[1][0].set_title('Appr. Species A')
     ax[1][0].pcolor(np.asarray(a_history), vmin=amin, vmax=amax)
+    ax[1][1].set_title('Appr. Species B')
     ax[1][1].pcolor(np.asarray(b_history), vmin=bmin, vmax=bmax)
 
     plt.show()
 
 
 if __name__ == '__main__':
-    # main()
-    test_main()
+    main()
+    # test_main()
 
