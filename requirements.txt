@@ -1,4 +1,4 @@
--e git+git@github.com:leoTiez/seqDataHandler.git#egg=seqDataHandler
+-e git+https://github.com/leoTiez/seqDataHandler.git#egg=seqDataHandler
 numpy>=1.18
 scipy>=1.5
 matplotlib>= 3.3

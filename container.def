@@ -5,14 +5,20 @@ Stage: build
 %setup
 
 %files
+    ./data/L3*
+    ./main.py
 
 %post
-    apt update && apt install git python3.6 python3-pip
-    git clone git@github.com:leoTiez/rd-tc-ner.git && cd rd-tc-ner
+    apt update && apt install -y git software-properties-common
+    apt update && add-apt-repository universe
+    apt install -y python3-pip
+    git clone https://github.com/leoTiez/rd-tc-ner.git && cd rd-tc-ner
+    git checkout develop
     python3 -m pip install -r requirements.txt
+    cp ../main.py .
 
 %runscript
-    python3 1d_react.py
+    python3 main.py
 
 %labels
     Author Leo Zeitler

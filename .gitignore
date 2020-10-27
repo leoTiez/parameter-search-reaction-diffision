@@ -1,4 +1,7 @@
 .idea
+main.py
+figures
+!figures/test*
 data
 *.pdf
 !data/*.csv
