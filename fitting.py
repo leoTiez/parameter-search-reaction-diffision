@@ -1,7 +1,11 @@
 #!/usr/bin/python3
+import os
+from pathlib import Path
+
 import numpy as np
 from scipy import interpolate
 import matplotlib.pyplot as plt
+import imageio
 
 
 def B(x, k, i, t):
@@ -42,7 +46,9 @@ def fit(
         w_model=1.0,
         success_ratio=0.97,
         max_iter=1200,
-        verbosity=0
+        verbosity=0,
+        save_plot=False,
+        save_prefix=''
 ):
     # create example t, as they should be the same for all data values along the genome
     t, _, _ = interpolate.splrep(x, y[0][:, 0], s=0, k=degree)
@@ -67,6 +73,7 @@ def fit(
         fig = plt.gcf()
         b_spl_lines = []
         real_lines = []
+        plt_list = []
         for num, (u_sub, y_sub) in enumerate(zip(u, y)):
             b_line, = plt.plot(x, u_sub[:, 0], label='B-Spline %s' % num)
             real_line, = plt.plot(x, y_sub[:, 0], label='Real function %s' % num)
@@ -75,6 +82,10 @@ def fit(
 
         plt.legend(loc='upper right')
         fig.canvas.draw()
+        if save_plot:
+            graph = np.frombuffer(fig.canvas.tostring_rgb(), dtype='uint8')
+            graph = graph.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+            plt_list.append(graph)
         fig.canvas.flush_events()
 
     while True:
@@ -87,6 +98,10 @@ def fit(
                 real_line.set_ydata(y_sub[:, 0])
 
             fig.canvas.draw()
+            if save_plot:
+                graph = np.frombuffer(fig.canvas.tostring_rgb(), dtype='uint8')
+                graph = graph.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+                plt_list.append(graph)
             fig.canvas.flush_events()
 
         success = []
@@ -139,5 +154,10 @@ def fit(
     if verbosity > 2:
         plt.ioff()
         plt.close('all')
+        if save_plot:
+            curr_dir = os.getcwd()
+            path = "%s/figures/animations" % curr_dir
+            Path(path).mkdir(exist_ok=True, parents=True)
+            imageio.mimsave("%s/%s_opt_change_b.gif" % (path, save_prefix), plt_list, fps=10)
 
     return odes
