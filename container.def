@@ -1,0 +1,28 @@
+Bootstrap: library
+From: ubuntu:18.04
+Stage: build
+
+%setup
+
+%files
+    ./data/L3*
+    ./main.py
+
+%post
+    apt update && apt install -y git software-properties-common
+    apt update && add-apt-repository universe
+    apt install -y python3-pip
+    git clone https://github.com/leoTiez/rd-tc-ner.git && cd rd-tc-ner
+    git checkout develop
+    python3 -m pip install -r requirements.txt
+    cp ../main.py .
+
+%runscript
+    python3 main.py
+
+%labels
+    Author Leo Zeitler
+    Version v0.0.1
+
+%help
+    Container for the simulation of the TC NER interaction pathway
