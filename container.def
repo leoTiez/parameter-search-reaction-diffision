@@ -9,7 +9,7 @@ Stage: build
     ./main.py
 
 %post
-    apt update && apt install -y git software-properties-common
+    apt update && apt install -y git software-properties-common libcurl4-openssl-dev zlib1g libz-dev
     apt update && add-apt-repository universe
     apt install -y python3-pip
     git clone https://github.com/leoTiez/rd-tc-ner.git && cd rd-tc-ner
