@@ -6,3 +6,5 @@ data
 *.pdf
 !data/*.csv
 __pycache__
+containers
+src
