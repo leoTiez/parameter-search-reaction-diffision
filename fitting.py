@@ -141,7 +141,7 @@ def fit(
 
         if np.all(np.asarray(success)):
             break
-        if counter is not None:
+        if max_iter is not None:
             if counter > max_iter:
                 break
 
