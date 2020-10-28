@@ -19,7 +19,7 @@ Stage: build
     cp -r ../data .
 
 %runscript
-    python3 /rd-tc-ner/main.py --save_plots --max_iter=10000 --save_prefix='pol2_rad3' 1> pol2_rad3_results.out 2> pol2_rad3_results.err
+    python3 /rd-tc-ner/main.py --save_plots --save_prefix='pol2_rad3' 1> pol2_rad3_results.out 2> pol2_rad3_results.err
 %labels
     Author Leo Zeitler
     Version v0.0.1
