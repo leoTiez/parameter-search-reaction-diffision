@@ -45,7 +45,7 @@ def fit(
         delta=1e-8,
         w_model=1.0,
         success_ratio=0.97,
-        max_iter=1200,
+        max_iter=None,
         verbosity=0,
         save_plot=False,
         save_prefix=''
@@ -141,8 +141,9 @@ def fit(
 
         if np.all(np.asarray(success)):
             break
-        if counter > max_iter:
-            break
+        if counter is not None:
+            if counter > max_iter:
+                break
 
         counter += 1
 
