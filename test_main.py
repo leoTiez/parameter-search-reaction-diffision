@@ -39,7 +39,7 @@ def main():
         [ode_A, ode_B],
         x=x,
         w_model=1.,
-        degree=5,  # Finding ===> Is very sensitive to the degree. Using degree of 4 or 5 works perfect
+        degree=3,  # Finding ===> Is very sensitive to the degree. Using degree of 4 or 5 works perfect
         delta=1e-10,
         verbosity=VERBOSITY,
         success_ratio=.99
@@ -78,15 +78,23 @@ def main():
     fig, ax = plt.subplots(2, 2, figsize=(12, 7))
     ax[0][0].pcolor(np.asarray(A), vmin=A.min(), vmax=A.max())
     ax[0][0].set_title('Species A')
+    ax[0][0].set_xlabel('Position in x')
+    ax[0][0].set_ylabel('Time step')
     ax[0][1].pcolor(np.asarray(B), vmin=B.min(), vmax=B.max())
     ax[0][1].set_title('Species B')
+    ax[0][1].set_xlabel('Position in x')
+    ax[0][1].set_ylabel('Time step')
     amin, amax = np.asarray(a_history).min(), np.asarray(a_history).max()
     bmin, bmax = np.asarray(b_history).min(), np.asarray(b_history).max()
     ax[1][0].set_title('Appr. Species A')
+    ax[1][0].set_xlabel('Position in x')
+    ax[1][0].set_ylabel('Time step')
     ax[1][0].pcolor(np.asarray(a_history), vmin=amin, vmax=amax)
     ax[1][1].set_title('Appr. Species B')
+    ax[1][1].set_xlabel('Position in x')
+    ax[1][1].set_ylabel('Time step')
     ax[1][1].pcolor(np.asarray(b_history), vmin=bmin, vmax=bmax)
-
+    fig.tight_layout()
     plt.show()
 
 
