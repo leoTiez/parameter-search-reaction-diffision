@@ -1,9 +1,12 @@
-# Modelling of the TC-NER Pathway Through Parameter Fitting of ODEs
-This approach aims to fit the parameters of a 
-predefined set of ODEs, which are derived from 
-reaction-diffusion systems to be able to model 
-change in space and time without the need to rely 
-on PDEs. A more detailed description is soon to come.
+# Estimating a Reaction-Diffusion System
+Whilst the dynamics in systems can be defined neatly using differential
+equations, the approximation of their parameters becomes quickly
+intractable when dealing with PDEs. Reaction-Diffusion systems offer a potent
+toolset to analyse a set of non-linear PDEs. Here, we make use of a modified
+version of an expected maximisation (EM) algorithm using BSplines, which 
+was proposed by Brewer et al. 2008 [1], to derive the parameters of a 
+reaction-diffusion system from data points.
+A more detailed description is soon to come.
 
 ## Requirements
 Please install the following software 
@@ -37,3 +40,6 @@ influence on the derived parameters and hence on the
 system dynamics
 
 ![Solution for k=3](figures/test_k3.png) 
+
+## References
+[1] Brewer, Daniel, et al. "Fitting ordinary differential equations to short time course data." Philosophical Transactions of the Royal Society A: Mathematical, Physical and Engineering Sciences 366.1865 (2008): 519-544.
