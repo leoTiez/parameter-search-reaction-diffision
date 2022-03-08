@@ -3,7 +3,7 @@ import numpy as np
 import numpy as np
 import matplotlib.pyplot as plt
 
-from ODE import ODE, nabla_sq_1d
+from ODE import ODESymmetric, nabla_sq_1d
 from fitting import fit
 
 VERBOSITY = 3
@@ -12,34 +12,34 @@ VERBOSITY = 3
 def main():
     # Original parameters A
     # 1, -1, -0.1, 1
-    A = np.genfromtxt('data/A-rand.csv', delimiter=',')
     # Original parameters B
     # 1, -1, -0.1, 3
+    A = np.genfromtxt('data/A-rand.csv', delimiter=',')
     B = np.genfromtxt('data/B-rand.csv', delimiter=',')
     x = np.genfromtxt('data/Time.csv', delimiter=',')
 
-    ode_A = ODE(
+    ode_A = ODESymmetric(
         np.random.random(4),
         np.asarray([False, False, False, False]),
         num_sys=A.shape[1],
         spatial_d=nabla_sq_1d,
         auto_pow=3
     )
-    ode_B = ODE(
+    ode_B = ODESymmetric(
         np.random.random(4),
         np.asarray([False, False, False, False]),
         num_sys=B.shape[1],
         spatial_d=nabla_sq_1d,
         auto_pow=3
     )
-    ODE.own_idx = 0
+    ODESymmetric.own_idx = 0
 
     ode_A, ode_B = fit(
-        np.asarray([A[:-1], B[:-1]]),
+        np.asarray([A[:-1], B[:-1]]),  # Layout (species, time points, spatial dimension)
         [ode_A, ode_B],
         x=x,
         w_model=1.,
-        degree=3,  # Finding ===> Is very sensitive to the degree. Using degree of 4 or 5 works perfect
+        degree=4,  # Finding ===> Is very sensitive to the degree. Using degree of 4 or 5 works perfect
         delta=1e-10,
         verbosity=VERBOSITY,
         success_ratio=.99
