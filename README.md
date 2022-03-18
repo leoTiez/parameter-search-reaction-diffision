@@ -20,11 +20,14 @@ To install the necessary python requirements simply run
 python3 -m pip install -r requirements.txt
 ```
 
-## Run the test case
+## Run the Simple Test Example
 Run 
 ```bash
 python3 test_main.py
 ```
+which shows the example of a predefined reaction diffusion system of the form
+
+![Reaction diffusion](figures/reaction-diffusion.png)
 
 It will load the dummy data from the data directory
 and try to derive the correct parameters for the ODE.
@@ -40,6 +43,15 @@ influence on the derived parameters and hence on the
 system dynamics
 
 ![Solution for k=3](figures/test_k3.png) 
+
+## Run the General Example
+To run the same example, but implemented with ODEs that were only defined in the main (instead of being given)
+run
+```bash
+python3 general_main.py
+```
+Use this as a reference if you want to estimate the parameters of an ODE with a customised layout.
+
 
 ## References
 [1] Brewer, Daniel, et al. "Fitting ordinary differential equations to short time course data." Philosophical Transactions of the Royal Society A: Mathematical, Physical and Engineering Sciences 366.1865 (2008): 519-544.
