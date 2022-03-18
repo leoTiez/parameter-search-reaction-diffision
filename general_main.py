@@ -1,41 +1,52 @@
-#!/usr/bin/python3
-import numpy as np
+#!/usr/bin/env python3
 import numpy as np
 import matplotlib.pyplot as plt
 
-from ODE import ODESymmetric, nabla_sq_1d
+from ODE import ODEGeneral, nabla_sq_1d
 from fitting import fit
 
 VERBOSITY = 3
 
 
 def main():
+    def conc_params(self, diffs):
+        own_spec = diffs[self.own_idx]
+        spatial_diff = self.func_nabla(own_spec)
+        return np.dstack((diffs.T, np.power(own_spec, 3).T, spatial_diff.T)).T
+
+    def calc(diffs, coeff):
+        conc = diffs[:2]
+        own_spec = diffs[2]
+        nabla = diffs[3]
+        infl_conc = np.einsum('ki,ijk->jk', coeff[:, :2], conc)
+        infl_own_spec = coeff[:, 2] * own_spec
+        infl_nabla = coeff[:, 3] * nabla
+        return infl_conc + infl_nabla + infl_own_spec
+
     # Original parameters A
     # 1, -1, -0.1, 1
+    A = np.genfromtxt('data/A-rand.csv', delimiter=',')
     # Original parameters B
     # 1, -1, -0.1, 3
-    A = np.genfromtxt('data/A-rand.csv', delimiter=',')
     B = np.genfromtxt('data/B-rand.csv', delimiter=',')
     x = np.genfromtxt('data/Time.csv', delimiter=',')
 
-    ode_A = ODESymmetric(
-        np.random.random(4),
-        np.asarray([False, False, False, False]),
-        num_sys=A.shape[1],
-        spatial_d=nabla_sq_1d,
-        auto_pow=3
+    ode_A = ODEGeneral(
+        np.tile(np.random.random(4), 50).reshape(50, 4),
+        calc,
+        nabla_sq_1d,
+        conc_params
     )
-    ode_B = ODESymmetric(
-        np.random.random(4),
-        np.asarray([False, False, False, False]),
-        num_sys=B.shape[1],
-        spatial_d=nabla_sq_1d,
-        auto_pow=3
+    ode_B = ODEGeneral(
+        np.tile(np.random.random(4), 50).reshape(50, 4),
+        calc,
+        nabla_sq_1d,
+        conc_params
     )
-    ODESymmetric.own_idx = 0
+    ODEGeneral.own_idx = 0
 
     ode_A, ode_B = fit(
-        np.asarray([A[:-1], B[:-1]]),  # Layout (species, time points, spatial dimension)
+        np.asarray([A[:-1], B[:-1]]),
         [ode_A, ode_B],
         x=x,
         w_model=1.,
@@ -53,14 +64,6 @@ def main():
         print('B coefficients have a median of %s, a mean of %s with a variance of %s and a std of %s' %
               (np.median(ode_B.coeff, axis=0), ode_B.coeff.mean(axis=0), ode_B.coeff.var(axis=0),
                ode_B.coeff.std(axis=0)))
-
-    a_param = np.mean(ode_A.coeff, axis=0)
-    b_param = np.mean(ode_B.coeff, axis=0)
-    ode_A.set_uniform_coeff(a_param)
-    ode_B.set_uniform_coeff(b_param)
-
-    if VERBOSITY > 0:
-        print('A params %s, B params %s' % (a_param, b_param))
 
     a = A[0, :].reshape(1, A.shape[1])
     b = B[0, :].reshape(1, B.shape[1])
