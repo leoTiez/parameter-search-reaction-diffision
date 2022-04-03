@@ -5,8 +5,12 @@ intractable when dealing with PDEs. Reaction-Diffusion systems offer a potent
 toolset to analyse a set of non-linear PDEs. Here, we make use of a modified
 version of an expected maximisation (EM) algorithm using BSplines, which 
 was proposed by Brewer et al. 2008 [1], to derive the parameters of a 
-reaction-diffusion system from data points.
-A more detailed description is soon to come.
+reaction-diffusion system from data points. For an interactive and explanatory
+guide for how to use the fitting method, see the interactive [Jupyter Notebook](ODE%20Parameter%20Estimation%20Jupyter%20Example.ipynb).
+You can run it locally with the command
+```commandline
+python3 -m jupyter notebook
+```
 
 ## Requirements
 Please install the following software 
