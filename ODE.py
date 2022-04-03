@@ -20,6 +20,10 @@ class ODE(ABC):
         self.own_idx = ODE.own_idx
         ODE.own_idx += 1
 
+    @staticmethod
+    def reset_idx():
+        ODE.own_idx = 0
+
     def calc(self, diffs, dt=.1):
         pass
 
