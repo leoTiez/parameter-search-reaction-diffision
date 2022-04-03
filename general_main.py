@@ -15,13 +15,7 @@ def main():
         return np.dstack((diffs.T, np.power(own_spec, 3).T, spatial_diff.T)).T
 
     def calc(diffs, coeff):
-        conc = diffs[:2]
-        own_spec = diffs[2]
-        nabla = diffs[3]
-        infl_conc = np.einsum('ki,ijk->jk', coeff[:, :2], conc)
-        infl_own_spec = coeff[:, 2] * own_spec
-        infl_nabla = coeff[:, 3] * nabla
-        return infl_conc + infl_nabla + infl_own_spec
+        return np.einsum('ki,ijk->jk', coeff, diffs)
 
     # Original parameters A
     # 1, -1, -0.1, 1

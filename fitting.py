@@ -45,7 +45,7 @@ def fit(
         delta=1e-8,
         w_model=1.0,
         success_ratio=0.97,
-        max_iter=None,
+        max_iter=int(1e4),
         verbosity=0,
         save_plot=False,
         save_prefix=''
@@ -109,7 +109,7 @@ def fit(
         beta = []
         for num, (bspline, y_sub, ode) in enumerate(zip(bsplines, y, odes)):
             result_ode = bd.dot(ode.calc(u))
-            b_coff, _, _, _ = np.linalg.lstsq(b_lhs, spl.dot(y_sub) + w_model * result_ode)
+            b_coff, _, _, _ = np.linalg.lstsq(b_lhs, spl.dot(y_sub) + w_model * result_ode, rcond=None)
 
             ode_conc = ode.conc_params(u)
             conc_mat = np.matmul(ode_conc.transpose(2, 0, 1), ode_conc.transpose(2, 1, 0))
@@ -117,14 +117,14 @@ def fit(
 
             a_coff = []
             for c, r in zip(conc_mat, r_term):
-                ac, _, _, _ = np.linalg.lstsq(c, r)
+                ac, _, _, _ = np.linalg.lstsq(c, r, rcond=None)
                 a_coff.append(ac)
 
             a_coff = np.asarray(a_coff)
             s = (
                         np.linalg.norm(b_coff - bspline.c, axis=0) < delta
                 ).astype('int').sum() / float(y_sub.shape[1])
-            success.append(s > success_ratio and np.abs(s - success_old[num]) < delta)
+            success.append(s >= success_ratio and np.abs(s - success_old[num]) < delta)
             success_old[num] = s
 
             alpha.append(a_coff)
@@ -143,6 +143,7 @@ def fit(
             break
         if max_iter is not None:
             if counter > max_iter:
+                print('Reached maximum number of iterations.')
                 break
 
         counter += 1
